@@ -1,5 +1,6 @@
 {
   "name": "rnf-frontend",
+  "description": "Frontend for the RNF project",
   "private": true,
   "version": "0.1.0",
   "type": "module",
