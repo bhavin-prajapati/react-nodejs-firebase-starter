@@ -33,5 +33,8 @@ module.exports = tseslint.config(
         ...globals.node,
       },
     },
+    rules: {
+      '@typescript-eslint/no-require-imports': 'off',
+    },
   },
 );
