@@ -1,0 +1,71 @@
+# Local development stack for the React + Node + Firestore starter.
+# Service names (firebase, api, frontend) are DNS hostnames on the shared
+# network and MUST match CONTRACT.md. Start with: docker compose up --build
+services:
+  # Local Firestore emulator + Emulator UI.
+  firebase:
+    build:
+      context: ./firebase
+    image: rnf-firebase:local
+    container_name: rnf-firebase
+    ports:
+      - "8081:8081" # Firestore emulator
+      - "4000:4000" # Emulator UI
+    networks:
+      - rnf
+    healthcheck:
+      # The Firestore emulator answers HTTP on its port once ready.
+      test: ["CMD-SHELL", "node -e \"require('http').get('http://127.0.0.1:8081/',r=>process.exit(r.statusCode?0:1)).on('error',()=>process.exit(1))\""]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  # Express API exposed through @google-cloud/functions-framework.
+  api:
+    build:
+      context: ./api
+    image: rnf-api:local
+    container_name: rnf-api
+    environment:
+      PORT: "8080"
+      FUNCTION_TARGET: "api"
+      GOOGLE_CLOUD_PROJECT: "demo-starter"
+      # Local/compose only: routes firebase-admin to the emulator.
+      FIRESTORE_EMULATOR_HOST: "firebase:8081"
+    ports:
+      - "8080:8080"
+    depends_on:
+      firebase:
+        condition: service_started
+    networks:
+      - rnf
+
+  # Vite dev server with hot reload.
+  # Choice: rather than building the production frontend image (a Node static
+  # server on 8080), local dev mounts ./frontend and runs the Vite dev server
+  # on 5173 for hot module reload. node_modules is kept in a named volume so the
+  # container's install is not clobbered by the host mount.
+  frontend:
+    image: node:20-bookworm-slim
+    container_name: rnf-frontend
+    working_dir: /app
+    command: sh -c "npm install && npm run dev -- --host 0.0.0.0 --port 5173"
+    environment:
+      VITE_API_BASE_URL: "http://localhost:8080"
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend:/app
+      - frontend_node_modules:/app/node_modules
+    depends_on:
+      - api
+    networks:
+      - rnf
+
+networks:
+  rnf:
+    driver: bridge
+
+volumes:
+  frontend_node_modules:
