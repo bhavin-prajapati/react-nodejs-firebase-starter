@@ -1,0 +1,111 @@
+# Build & push the frontend and API images, then deploy to OpenShift.
+#
+# Required configuration
+#   Secrets:
+#     OPENSHIFT_SERVER     - OpenShift API server URL (https://api.cluster:6443)
+#     OPENSHIFT_TOKEN      - token for `oc login` (service account recommended)
+#     OPENSHIFT_NAMESPACE  - target project/namespace
+#   Optional repository variable:
+#     IMAGE_OWNER          - registry owner/org (defaults to the GitHub owner,
+#                            lowercased). Set this to push elsewhere on GHCR.
+#     VITE_API_BASE_URL    - baked into the frontend bundle at build time
+#                            (e.g. https://api-<ns>.apps.<cluster>). Defaults to "".
+#
+# Images are pushed to GHCR using the built-in GITHUB_TOKEN:
+#   ghcr.io/<owner>/rnf-frontend:{<sha>,latest}
+#   ghcr.io/<owner>/rnf-api:{<sha>,latest}
+name: deploy
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+env:
+  IMAGE_REGISTRY: ghcr.io
+jobs:
+  build-and-push:
+    name: Build & push images
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      owner: ${{ steps.vars.outputs.owner }}
+      sha: ${{ steps.vars.outputs.sha }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Compute image vars
+        id: vars
+        run: |
+          OWNER="${{ vars.IMAGE_OWNER }}"
+          if [ -z "$OWNER" ]; then OWNER="${{ github.repository_owner }}"; fi
+          echo "owner=$(echo "$OWNER" | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
+          echo "sha=${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.IMAGE_REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build & push API image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./api
+          push: true
+          tags: |
+            ${{ env.IMAGE_REGISTRY }}/${{ steps.vars.outputs.owner }}/rnf-api:${{ github.sha }}
+            ${{ env.IMAGE_REGISTRY }}/${{ steps.vars.outputs.owner }}/rnf-api:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build & push frontend image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./frontend
+          push: true
+          build-args: |
+            VITE_API_BASE_URL=${{ vars.VITE_API_BASE_URL }}
+          tags: |
+            ${{ env.IMAGE_REGISTRY }}/${{ steps.vars.outputs.owner }}/rnf-frontend:${{ github.sha }}
+            ${{ env.IMAGE_REGISTRY }}/${{ steps.vars.outputs.owner }}/rnf-frontend:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    name: Deploy to OpenShift
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install oc CLI
+        uses: redhat-actions/openshift-tools-installer@v1
+        with:
+          oc: "4"
+
+      - name: Log in to OpenShift
+        run: |
+          oc login "${{ secrets.OPENSHIFT_SERVER }}" \
+            --token="${{ secrets.OPENSHIFT_TOKEN }}"
+          oc project "${{ secrets.OPENSHIFT_NAMESPACE }}"
+
+      - name: Apply manifests
+        run: oc apply -f k8s/
+
+      - name: Set images to the built commit and wait for rollout
+        env:
+          REGISTRY: ${{ env.IMAGE_REGISTRY }}
+          OWNER: ${{ needs.build-and-push.outputs.owner }}
+          SHA: ${{ needs.build-and-push.outputs.sha }}
+        run: |
+          oc set image deployment/api api="$REGISTRY/$OWNER/rnf-api:$SHA"
+          oc set image deployment/frontend frontend="$REGISTRY/$OWNER/rnf-frontend:$SHA"
+          oc rollout status deployment/api --timeout=180s
+          oc rollout status deployment/frontend --timeout=180s
