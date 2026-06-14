@@ -1,0 +1,72 @@
+# Integration Contract
+
+This file is the single source of truth for cross-component interfaces in this
+starter. Every component (`frontend/`, `api/`, `firebase/`, infra) MUST conform
+to the names, ports, routes, and environment variables defined here so the
+pieces integrate without rework. Do not deviate from this contract.
+
+## Components & Ownership
+- `frontend/` — Vite + React + TypeScript SPA. Owned by the frontend agent.
+- `api/` — Express + `@google-cloud/functions-framework` + `firebase-admin`
+  (TypeScript). Owned by the api agent.
+- `firebase/` — Firebase Tools image + emulator config. Owned by the infra agent.
+- `k8s/`, `docker-compose.yml`, `.env.example`, `.github/workflows/`, `README.md`
+  — Owned by the infra agent.
+
+## Compose Service Names
+- `frontend`
+- `api`
+- `firebase`
+
+These exact names are used as DNS hostnames on the Compose network.
+
+## Ports
+- Frontend dev server (Vite): `5173`
+- Frontend production container (Node static server): `8080`
+- API container (functions-framework): `8080`
+- Firestore emulator: `8081`
+- Firebase Emulator UI: `4000`
+
+## API Routes
+The API exposes a single functions-framework HTTP function whose target is
+`api`. That function is an Express app mounting:
+- `GET /healthz` → `200` with body `{ "status": "ok" }`
+- `GET /api/items` → `200` with `{ "items": Item[] }`
+- `POST /api/items` → `201` with the created `Item`; request body `{ "name": string }`
+
+### Item shape
+```json
+{ "id": "string", "name": "string", "createdAt": "ISO-8601 string" }
+```
+
+Items are stored in the Firestore collection named `items`.
+
+## Environment Variables
+### API
+- `PORT=8080`
+- `FUNCTION_TARGET=api`
+- `GOOGLE_CLOUD_PROJECT=demo-starter`
+- `FIRESTORE_EMULATOR_HOST=firebase:8081` (local/compose only; unset in prod)
+
+### Frontend
+- `VITE_API_BASE_URL` — base URL of the API.
+  - Local Compose dev value: `http://localhost:8080`
+  - The frontend calls API routes as `${VITE_API_BASE_URL}/api/items` etc.
+
+## Runtime / Tooling
+- Node 20 LTS, npm.
+- Application container images run as a non-root user and listen on `8080`.
+- Do NOT use NGINX anywhere. The production frontend image serves built assets
+  with a small Node/Express static server (`server.cjs`) that implements SPA
+  fallback and exposes `GET /healthz`.
+
+## Firestore Project
+- Project id: `demo-starter` (matches `GOOGLE_CLOUD_PROJECT`).
+
+## Kubernetes / OpenShift
+- Two Deployments: `frontend` and `api`, each with a `Service` and a `Route`.
+- Containers listen on `8080`; probes hit `GET /healthz`.
+- Security contexts must be OpenShift-compatible (non-root, no fixed UID,
+  `runAsNonRoot: true`, drop all capabilities).
+- Image references use placeholders: `IMAGE_REGISTRY/IMAGE_OWNER/rnf-frontend`
+  and `IMAGE_REGISTRY/IMAGE_OWNER/rnf-api`.
