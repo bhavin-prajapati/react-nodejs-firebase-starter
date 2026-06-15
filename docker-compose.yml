@@ -2,7 +2,7 @@
 # Service names (firebase, api, frontend) are DNS hostnames on the shared
 # network and MUST match CONTRACT.md. Start with: docker compose up --build
 services:
-  # Local Firestore emulator + Emulator UI.
+  # Local Firestore + Auth emulator + Emulator UI.
   firebase:
     build:
       context: ./firebase
@@ -10,6 +10,7 @@ services:
     container_name: rnf-firebase
     ports:
       - "8081:8081" # Firestore emulator
+      - "9099:9099" # Auth emulator
       - "4000:4000" # Emulator UI
     networks:
       - rnf
@@ -31,8 +32,9 @@ services:
       PORT: "8080"
       FUNCTION_TARGET: "api"
       GOOGLE_CLOUD_PROJECT: "demo-starter"
-      # Local/compose only: routes firebase-admin to the emulator.
+      # Local/compose only: routes firebase-admin to the emulators.
       FIRESTORE_EMULATOR_HOST: "firebase:8081"
+      FIREBASE_AUTH_EMULATOR_HOST: "firebase:9099"
     ports:
       - "8080:8080"
     depends_on:
@@ -53,6 +55,9 @@ services:
     command: sh -c "npm install && npm run dev -- --host 0.0.0.0 --port 5173"
     environment:
       VITE_API_BASE_URL: "http://localhost:8080"
+      VITE_FIREBASE_API_KEY: "demo-api-key"
+      VITE_FIREBASE_AUTH_DOMAIN: "demo-starter.firebaseapp.com"
+      VITE_FIREBASE_PROJECT_ID: "demo-starter"
     ports:
       - "5173:5173"
     volumes:

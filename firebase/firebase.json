@@ -1,9 +1,22 @@
 {
+  "auth": {
+    "providers": {
+      "emailPassword": true,
+      "googleSignIn": {
+        "oAuthBrandDisplayName": "RNF Starter",
+        "supportEmail": "support@example.com"
+      }
+    }
+  },
   "firestore": {
     "rules": "firestore.rules",
     "indexes": "firestore.indexes.json"
   },
   "emulators": {
+    "auth": {
+      "host": "0.0.0.0",
+      "port": 9099
+    },
     "firestore": {
       "host": "0.0.0.0",
       "port": 8081

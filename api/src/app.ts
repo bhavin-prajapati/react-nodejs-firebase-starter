@@ -1,5 +1,6 @@
 import cors from 'cors';
 import express, { type Express, type NextFunction, type Request, type Response } from 'express';
+import { authMiddleware, type AuthenticatedRequest } from './authMiddleware';
 import { getDb, ITEMS_COLLECTION } from './firestore';
 
 /** Shape of an item as returned by the API (per the integration contract). */
@@ -32,7 +33,7 @@ export function createApp(): Express {
     res.status(200).json({ status: 'ok' });
   });
 
-  // List items, newest first.
+  // List items, newest first (public — no auth required).
   app.get(
     '/api/items',
     asyncHandler(async (_req: Request, res: Response) => {
@@ -54,9 +55,10 @@ export function createApp(): Express {
     }),
   );
 
-  // Create an item.
+  // Create an item (requires authentication).
   app.post(
     '/api/items',
+    asyncHandler(authMiddleware),
     asyncHandler(async (req: Request, res: Response) => {
       const name: unknown = req.body?.name;
 
@@ -65,8 +67,11 @@ export function createApp(): Express {
         return;
       }
 
+      const authReq = req as AuthenticatedRequest;
       const createdAt = new Date().toISOString();
-      const ref = await getDb().collection(ITEMS_COLLECTION).add({ name, createdAt });
+      const ref = await getDb()
+        .collection(ITEMS_COLLECTION)
+        .add({ name, createdAt, createdBy: authReq.auth.uid });
 
       const item: Item = { id: ref.id, name, createdAt };
       res.status(201).json(item);

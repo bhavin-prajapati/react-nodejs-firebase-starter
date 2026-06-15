@@ -1,11 +1,12 @@
 rules_version = '2';
 
 // Development-only rules for the local Firestore emulator.
-// These allow unrestricted access and MUST NOT be used in production.
+// Reads are public; writes require authentication.
 service cloud.firestore {
   match /databases/{database}/documents {
     match /{document=**} {
-      allow read, write: if true;
+      allow read: if true;
+      allow write: if request.auth != null;
     }
   }
 }
